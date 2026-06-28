@@ -110,7 +110,7 @@ async function getUserProfile(userId) {
 }
 
 // URL для экспорта Google таблицы в формате CSV (вкладка "Вышка")
-const CSV_URL = 'https://docs.google.com/spreadsheets/d/1w2r_C3R7kh5CDvlehOHOjd3DPnvCMBQ9SnXZnB6t754/export?format=csv&gid=2053240546';
+const CSV_URL = 'https://docs.google.com/spreadsheets/d/1w2r_C3R7kh5CDvlehOHOjd3DPnvCMBQ9SnXZnB6t754/export?format=csv&gid=1345252980';
 
 // Парсер CSV с поддержкой переносов строк внутри ячеек
 function parseCSV(text) {
@@ -200,11 +200,12 @@ async function getStaffDataFromCSV() {
                 }
                 
                 if (section === 'main') {
-                    if (nameCol.includes('Админ')) {
+                    const nameLower = nameCol.toLowerCase();
+                    if (nameLower.includes('админ')) {
                         staffIds.admin = idCol;
-                    } else if (nameCol.includes('Помощник')) {
+                    } else if (nameLower.includes('помощник')) {
                         staffIds.assistant = idCol;
-                    } else if (nameCol.includes('Куратор') || nameCol.includes('Главный') || nameCol.includes('Гл.')) {
+                    } else if (nameLower.includes('куратор') || nameLower.includes('главный') || nameLower.includes('гл.')) {
                         staffIds.head_curator = idCol;
                     }
                 } else if (section === 'curator') {
