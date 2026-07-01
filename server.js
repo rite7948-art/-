@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
-const fetch = require('node-fetch');
+// Нативный fetch (Node 18+) корректно обрабатывает редирект Google на googleusercontent,
+// в отличие от node-fetch v2, который отдаёт HTTP 400. Откат на node-fetch для старых версий Node.
+const fetch = globalThis.fetch ? globalThis.fetch.bind(globalThis) : require('node-fetch');
 const path = require('path');
 const fs = require('fs');
 
@@ -149,10 +151,26 @@ function parseCSV(text) {
 async function getStaffDataFromCSV() {
     try {
         console.log('[CSV] Загрузка таблицы напрямую...');
-        const response = await fetchWithTimeout(`${CSV_URL}&t=${Date.now()}`, {}, 15000);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const csvText = await response.text();
-        
+        // Google периодически отдаёт HTTP 400 на редиректе export — делаем несколько попыток
+        // и проверяем, что пришёл именно CSV, а не HTML-страница ошибки.
+        let csvText = '';
+        const attempts = 4;
+        for (let i = 1; i <= attempts; i++) {
+            try {
+                const response = await fetchWithTimeout(`${CSV_URL}&t=${Date.now()}`, {}, 15000);
+                const body = await response.text();
+                if (response.ok && !body.trimStart().startsWith('<')) {
+                    csvText = body;
+                    break;
+                }
+                console.warn(`[CSV] Попытка ${i}/${attempts}: HTTP ${response.status}, не CSV`);
+            } catch (e) {
+                console.warn(`[CSV] Попытка ${i}/${attempts} упала: ${e.message}`);
+            }
+            if (i < attempts) await new Promise(r => setTimeout(r, 800));
+        }
+        if (!csvText) throw new Error('Не удалось получить CSV после нескольких попыток');
+
         const rows = parseCSV(csvText);
         const staffIds = {};
         
@@ -186,13 +204,16 @@ async function getStaffDataFromCSV() {
             }
             
             if (section) {
-                const len = row.length;
-                if (len < 4) continue;
-                
-                const shiftCol = clean(row[len - 4]);
-                const nameCol = clean(row[len - 3]);
-                const tagCol = clean(row[len - 2]);
-                const idCol = clean(row[len - 1]);
+                // Убираем хвостовые пустые ячейки — состав всегда в 4 последних непустых колонках.
+                // export обрезает пустые ячейки в строке, а gviz их дополняет — так парсер работает с обоими.
+                let end = row.length;
+                while (end > 0 && clean(row[end - 1]) === '') end--;
+                if (end < 4) continue;
+
+                const shiftCol = clean(row[end - 4]);
+                const nameCol = clean(row[end - 3]);
+                const tagCol = clean(row[end - 2]);
+                const idCol = clean(row[end - 1]);
                 
                 // Если ID не является числом длиной от 17 до 20 символов, пропускаем
                 if (!/^\d{17,20}$/.test(idCol)) {
